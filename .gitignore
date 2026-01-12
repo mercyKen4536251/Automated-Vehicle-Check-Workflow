@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Streamlit
+.streamlit/
+
+# 敏感数据
+data/model_config.csv
+data/test_history/
+*.secret
+*.key
+.env
+.env.local
+
+# 临时文件
+*.log
+*.tmp
+tmp/
+temp/
+*.bak
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 项目特定
+Memo.md
+Todo.md
