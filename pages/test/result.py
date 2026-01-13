@@ -4,12 +4,11 @@ import sys
 import os
 import time
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from src import history_manager as hm
 
-# ==================== 页面配置 ====================
-st.set_page_config(page_title="结果面板", page_icon="📊", layout="wide")
-st.title("📊 结果面板")
+# ==================== 页面标题 ====================
+st.header("📊 结果面板")
 st.markdown("---")
 
 # Tab切换

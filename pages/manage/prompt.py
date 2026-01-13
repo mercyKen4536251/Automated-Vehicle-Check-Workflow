@@ -3,7 +3,7 @@ import sys
 import os
 import time
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
 from src import data_manager as dm
 
 # ==================== 缓存函数 ====================
@@ -15,9 +15,8 @@ def load_prompts_cached():
 def load_prompt_versions_cached(node_index):
     return dm.get_prompt_versions(node_index)
 
-# ==================== 页面配置 ====================
-st.set_page_config(page_title="提示词管理", page_icon="🧩", layout="wide")
-st.title("🧩 提示词管理")
+# ==================== 页面标题 ====================
+st.header("🧩 提示词管理")
 st.markdown("---")
 
 # ==================== 节点选项 ====================
