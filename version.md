@@ -1,5 +1,65 @@
 # 版本历史
 
+## v1.4.0（2025-01-14）
+
+**模型客户端重构**:
+- 将通用 `call()` 方法拆分为3个专用方法：`call_single()`、`call_multi_ref()`、`call_compare()`
+- 优化消息结构，明确区分参考图和生成图
+- 提高代码可维护性和业务逻辑清晰度
+
+**工作流引擎优化**:
+- 节点1-3：使用 `call_single()` 进行单图判断
+- 节点4：使用 `call_multi_ref()` 进行多参考图比对，参考图在前、生成图在后
+- 节点5：使用 `call_compare()` 进行双图比对，自动处理描述占位符
+- 修正 `match_image` 解析逻辑，模型返回1-N直接对应参考图1-N
+
+**节点有效率指标完善**:
+- 重新定义节点有效率：分母为所有case总数，分子为在预期节点被正确处理的case数
+- badcase：`final_pass="no"` 且在预期节点被过滤才算精准
+- goodcase：`final_pass="yes"` 且经过节点5才算精准
+- `final_pass="unknown"` 的case无论哪种都算节点不精准
+
+**结果面板重构**:
+- 改用 `st.tabs` 实现测试记录和详细结果的分离展示
+- 测试记录中每条记录支持「查看详情」和「删除」操作
+- 详细结果中新增配置信息展示（模型、思考模式、提示词版本）
+- 优化详细列表布局：3列展示（基础信息、图片预览、模型输出JSON）
+- 新增多维度筛选（结果/车系/类型/标签）
+
+**其他改进**:
+- 确保goodcase在标签管理中被正确处理（无标签）
+- 完善审图准确率判断逻辑，适配final_pass三态（yes/no/unknown）
+
+## v1.3.0（2025-01-14）
+完成！主要改动总结：
+
+1. 数据结构 (data/problem_tags.csv)
+
+新增 expected_filter_node 字段，标记每个标签预期在哪个节点被过滤
+2. 数据管理 (src/data_manager.py)
+
+add_problem_tag() 支持传入 expected_filter_node
+update_problem_tag() 支持更新 expected_filter_node
+新增 get_expected_filter_node() 函数
+3. 配置管理 (pages/manage/config.py)
+
+标签展示包含预期过滤节点信息
+新增/编辑标签时可选择预期过滤节点（下拉选择1-5）
+4. 历史管理 (src/history_manager.py)
+
+save_test_history() 接收 tag_node_map 参数
+新增指标：badcase_total、badcase_correct、precise_total、node_efficiency
+每条结果新增 is_precise 和 expected_filter_node 字段
+5. 运行测试 (pages/test/run_test.py)
+
+保存历史时传入标签到节点的映射
+6. 结果面板 (pages/test/result.py)
+
+新增"节点有效率"指标展示
+新增"节点不精准"筛选选项
+列表中显示节点信息，不精准的标记 ⚠️
+历史记录也显示节点有效率
+
 ## v1.2.0 (2025-01-13)
 
 **参考图库管理**:

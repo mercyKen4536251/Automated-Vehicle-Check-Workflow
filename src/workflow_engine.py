@@ -2,22 +2,26 @@
 工作流引擎模块
 
 实现5节点审图工作流逻辑，使用模块化的模型客户端
+
+工作流最终结果说明：
+- final_pass="yes": 生成图通过所有审核，质量合格
+- final_pass="no": 生成图在某个节点被明确判定为不合格
+- final_pass="unknown": 无法判定（如节点4找不到匹配视角，或节点5返回unknown）
 """
 from . import model_client as mc
 from . import config_manager as cm
 
+
 def run_workflow_for_case(case_data, ref_data, prompts):
     """
-    执行5节点审图工作流（一票否决机制）
+    执行5节点审图工作流
 
     工作流逻辑：
-    1. Agent1: 判断是否有车 -> car="yes"才通过
-    2. Agent2: 判断是否裁切 -> cropping="no"才通过
-    3. Agent3: 判断运动无人驾驶 -> match="yes"才通过（过滤运动+无人驾驶）
-    4. Agent4: 判断视角一致 -> match="yes"才通过，返回匹配的参考图索引
-    5. Agent5: 判断细节一致 -> match="yes"才通过
-
-    任意节点失败，立即返回 final_pass="no"，并记录失败节点
+    1. Node1: 判断是否有车且可用 -> car="yes"才继续
+    2. Node2: 判断是否裁切 -> cropping="no"才继续
+    3. Node3: 判断车牌有字/无人驾驶 -> match="yes"才继续
+    4. Node4: 判断视角一致 -> match="yes"才继续到Node5，match="no"返回unknown
+    5. Node5: 判断细节一致 -> match="yes"返回yes，match="no"返回no，match="unknown"返回unknown
 
     Args:
         case_data: 测试用例数据（dict）
@@ -26,12 +30,12 @@ def run_workflow_for_case(case_data, ref_data, prompts):
 
     Returns:
         dict: {
-            "final_pass": "yes" | "no" | "error",
+            "final_pass": "yes" | "no" | "unknown" | "error",
             "finish_at_step": 1-5,
-            "parse_output": {...},  # 关键节点的JSON输出
+            "parse_output": {...},
             "reason": "失败原因或成功信息",
-            "prompt_versions": {"p1": "v1.0.0", "p2": "v2.0.0", ...},  # 各节点使用的提示词版本
-            "model_config": {"model_id": "...", "thinking_mode": "..."}  # 使用的模型配置
+            "prompt_versions": {"p1": "v1.0.0", ...},
+            "model_config": {"model_id": "...", "thinking_mode": "..."}
         }
     """
     case_url = case_data['case_url']
@@ -64,7 +68,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    resp1_text = client.call(p1, [case_url])
+    resp1_text = client.call_single(p1, case_url)
     resp1_json = client.parse_json_response(resp1_text)
 
     if not resp1_json:
@@ -82,7 +86,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "final_pass": "no",
             "finish_at_step": 1,
             "parse_output": resp1_json,
-            "reason": "图片中未检测到汽车",
+            "reason": "图片中未检测到可用汽车",
             "prompt_versions": prompt_versions,
             "model_config": model_config
         }
@@ -102,7 +106,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    resp2_text = client.call(p2, [case_url])
+    resp2_text = client.call_single(p2, case_url)
     resp2_json = client.parse_json_response(resp2_text)
 
     if not resp2_json:
@@ -125,7 +129,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    # ==================== Node 3: 判断运动状态无人驾驶 ====================
+    # ==================== Node 3: 判断车牌有字/无人驾驶 ====================
     p3_data = prompts.get(3, {})
     p3 = p3_data.get('prompt_content', "")
     prompt_versions["p3"] = p3_data.get('prompt_version', "unknown")
@@ -140,7 +144,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    resp3_text = client.call(p3, [case_url])
+    resp3_text = client.call_single(p3, case_url)
     resp3_json = client.parse_json_response(resp3_text)
 
     if not resp3_json:
@@ -158,7 +162,7 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "final_pass": "no",
             "finish_at_step": 3,
             "parse_output": resp3_json,
-            "reason": "检测到运动状态无人驾驶",
+            "reason": resp3_json.get('reason', '检测到车牌有字或无人驾驶'),
             "prompt_versions": prompt_versions,
             "model_config": model_config
         }
@@ -194,16 +198,8 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    # 构建提示词：明确说明图片顺序和索引规则
-    prompt_with_context = f"""{p4}
-
-重要说明：
-- 第1张图片：生成图（待判定的图片）
-- 第2-{len(ordered_ref_urls)+1}张图片：参考图1-{len(ordered_ref_urls)}（用于比对）
-- 如果匹配，请在match_image字段中返回匹配的参考图索引（2-{len(ordered_ref_urls)+1}，对应参考图1-{len(ordered_ref_urls)}）
-"""
-
-    resp4_text = client.call(prompt_with_context, [case_url] + ordered_ref_urls)
+    # 使用call_multi_ref：参考图在前，生成图在后
+    resp4_text = client.call_multi_ref(p4, ordered_ref_urls, case_url)
     resp4_json = client.parse_json_response(resp4_text)
 
     if not resp4_json:
@@ -216,37 +212,34 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
+    # 节点4的match="no"表示没有找到匹配的参考图视角，返回unknown
     if resp4_json.get('match') == 'no':
         return {
-            "final_pass": "no",
+            "final_pass": "unknown",
             "finish_at_step": 4,
             "parse_output": resp4_json,
-            "reason": "生成图与参考图视角不一致",
+            "reason": "未找到与生成图视角匹配的参考图，无法判定",
             "prompt_versions": prompt_versions,
             "model_config": model_config
         }
 
     # 解析匹配的参考图索引
+    # 图片传递顺序：[参考图1, 参考图2, ..., 参考图N, 生成图]
+    # 模型返回的match_image应该是参考图的顺序值（1-N）
     matched_ref_url = None
     match_image_value = resp4_json.get('match_image', '')
 
-    # 尝试解析为整数索引
-    # 传递顺序：[生成图(1), 参考图1(2), 参考图2(3), ..., 参考图5(6)]
-    # 模型返回2-6，对应ordered_ref_urls[0-4]
     try:
         idx = int(match_image_value)
-        # 模型返回的索引是2-6（对应参考图1-5）
-        if 2 <= idx <= len(ordered_ref_urls) + 1:
-            matched_ref_url = ordered_ref_urls[idx - 2]  # idx=2 -> ordered_ref_urls[0]
-        # 兼容旧逻辑：如果模型返回1-5（直接对应参考图）
-        elif 1 <= idx <= len(ordered_ref_urls):
+        # 模型返回1-N，对应ordered_ref_urls[0-(N-1)]
+        if 1 <= idx <= len(ordered_ref_urls):
             matched_ref_url = ordered_ref_urls[idx - 1]
         else:
             return {
                 "final_pass": "error",
                 "finish_at_step": 4,
                 "parse_output": resp4_json,
-                "reason": f"match_image索引超出范围: {idx} (期望2-{len(ordered_ref_urls)+1}或1-{len(ordered_ref_urls)})",
+                "reason": f"match_image索引超出范围: {idx} (期望1-{len(ordered_ref_urls)})",
                 "prompt_versions": prompt_versions,
                 "model_config": model_config
             }
@@ -281,12 +274,8 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    if "{{cankaotumiaoshu}}" in p5:
-        final_prompt = p5.replace("{{cankaotumiaoshu}}", description)
-    else:
-        final_prompt = f"{p5}\n\n参考图描述:\n{description}"
-
-    resp5_text = client.call(final_prompt, [matched_ref_url, case_url])
+    # 使用call_compare：参考图+描述+生成图
+    resp5_text = client.call_compare(p5, matched_ref_url, case_url, description)
     resp5_json = client.parse_json_response(resp5_text)
 
     if not resp5_json:
@@ -299,22 +288,34 @@ def run_workflow_for_case(case_data, ref_data, prompts):
             "model_config": model_config
         }
 
-    if resp5_json.get('match') != 'yes':
+    # 节点5的match结果直接映射到final_pass
+    match_result = resp5_json.get('match', 'unknown')
+    
+    if match_result == 'yes':
+        return {
+            "final_pass": "yes",
+            "finish_at_step": 5,
+            "parse_output": resp5_json,
+            "reason": "所有审核节点通过",
+            "prompt_versions": prompt_versions,
+            "model_config": model_config
+        }
+    elif match_result == 'no':
         return {
             "final_pass": "no",
             "finish_at_step": 5,
             "parse_output": resp5_json,
-            "reason": resp5_json.get('reason', '细节不一致或无法判断'),
+            "reason": resp5_json.get('reason', '细节不一致'),
             "prompt_versions": prompt_versions,
             "model_config": model_config
         }
-
-    # ==================== 全部通过 ====================
-    return {
-        "final_pass": "yes",
-        "finish_at_step": 5,
-        "parse_output": resp5_json,
-        "reason": "所有审核节点通过",
-        "prompt_versions": prompt_versions,
-        "model_config": model_config
-    }
+    else:
+        # match="unknown" 或其他情况
+        return {
+            "final_pass": "unknown",
+            "finish_at_step": 5,
+            "parse_output": resp5_json,
+            "reason": resp5_json.get('reason', '无法判定细节是否一致'),
+            "prompt_versions": prompt_versions,
+            "model_config": model_config
+        }

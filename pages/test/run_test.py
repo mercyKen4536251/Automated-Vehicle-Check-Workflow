@@ -141,6 +141,13 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
     st.session_state.test_running = True
     st.session_state.results = []
     
+    # 构建标签到预期节点的映射（用于计算is_precise）
+    tags_df = dm.get_problem_tags()
+    tag_node_map = {}
+    if not tags_df.empty and 'expected_filter_node' in tags_df.columns:
+        for _, row in tags_df.iterrows():
+            tag_node_map[row['tag_content']] = int(row['expected_filter_node'])
+    
     total = len(selected_cases)
     completed = 0
     
@@ -181,9 +188,30 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
                     res['problem_tag'] = case_info.get('problem_tag', '')
                     res['case_url'] = case_info['case_url']
                     
-                    expected_pass = "no" if case_info['case_type'] == 'badcase' else "yes"
-                    is_correct = (res['final_pass'] == expected_pass)
+                    # 判断is_correct：
+                    # - badcase: final_pass="no"才算正确
+                    # - goodcase: final_pass="yes"才算正确
+                    # - final_pass="unknown"无论哪种都算错误
+                    if case_info['case_type'] == 'badcase':
+                        is_correct = (res['final_pass'] == 'no')
+                    else:
+                        is_correct = (res['final_pass'] == 'yes')
                     res['is_correct'] = is_correct
+                    
+                    # 计算is_precise（针对所有case）
+                    # 节点有效率 = 在预期节点被正确处理的case / 所有case
+                    # - badcase: final_pass="no"且在预期节点被过滤
+                    # - goodcase: final_pass="yes"且经过节点5（goodcase没有标签，必须走完5个节点）
+                    is_precise = False
+                    if case_info['case_type'] == 'badcase':
+                        problem_tag = case_info.get('problem_tag', '')
+                        expected_node = tag_node_map.get(problem_tag, 0)
+                        actual_node = res.get('finish_at_step', 0)
+                        is_precise = (res['final_pass'] == 'no' and expected_node == actual_node)
+                    else:
+                        # goodcase必须走完5个节点且final_pass="yes"
+                        is_precise = (res['final_pass'] == 'yes' and res.get('finish_at_step', 0) == 5)
+                    res['is_precise'] = is_precise
                     
                     st.session_state.results.append(res)
                     
@@ -192,7 +220,8 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
                     progress_bar.progress(progress, text=f"进度: {completed}/{real_total}")
                     
                     icon = '✅' if is_correct else '❌'
-                    status.write(f"{icon} Case {res['case_id']} | {res['car']} | 预期: {expected_pass} | 实际: {res['final_pass']}")
+                    expected = "no" if case_info['case_type'] == 'badcase' else "yes"
+                    status.write(f"{icon} Case {res['case_id']} | {res['car']} | 预期: {expected} | 实际: {res['final_pass']}")
                     
                 except Exception as e:
                     status.write(f"❌ Case {case_info['case_id']} 执行出错: {e}")
@@ -201,7 +230,8 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
     
     if st.session_state.results:
         try:
-            test_id = hm.save_test_history(st.session_state.results)
+            # tag_node_map已在前面构建，直接使用
+            test_id = hm.save_test_history(st.session_state.results, tag_node_map)
             
             correct_count = sum(1 for r in st.session_state.results if r.get('is_correct', False))
             total_count = len(st.session_state.results)
@@ -213,7 +243,7 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
 
 - 测试总数: **{total_count}**
 - 通过数: **{correct_count}**
-- 准确率: **{accuracy:.1f}%**
+- 审图准确率: **{accuracy:.1f}%**
 - 测试ID: **{test_id}**
 
 请前往【结果面板】查看详细结果。

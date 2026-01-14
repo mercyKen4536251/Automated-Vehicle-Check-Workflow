@@ -21,7 +21,7 @@ def generate_test_id():
     return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
-def save_test_history(results_list):
+def save_test_history(results_list, tag_node_map=None):
     """
     保存测试历史到JSON文件
 
@@ -38,6 +38,7 @@ def save_test_history(results_list):
             - is_correct: 是否符合预期
             - prompt_versions: 提示词版本字典 {"p1": "v1.0.0", "p2": "v2.0.0", ...}
             - model_config: 模型配置 {"model_id": "...", "thinking_mode": "..."}
+        tag_node_map: 标签到预期节点的映射 {"裁切": 2, "非汽车": 1, ...}
 
     Returns:
         str: 生成的测试ID
@@ -45,29 +46,67 @@ def save_test_history(results_list):
     test_id = generate_test_id()
     test_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    if tag_node_map is None:
+        tag_node_map = {}
+
     cases_total = len(results_list)
     acc_total = sum(1 for r in results_list if r.get('is_correct', False))
     acc_rate = round(acc_total / cases_total, 4) if cases_total > 0 else 0
+
+    # 计算节点有效率（针对所有case）
+    # 节点有效率 = 在预期节点被正确处理的case / 所有case
+    # - badcase: final_pass="no"且在预期节点被过滤
+    # - goodcase: final_pass="yes"且经过节点5
+    badcase_results = [r for r in results_list if r.get('case_type') == 'badcase']
+    goodcase_results = [r for r in results_list if r.get('case_type') == 'goodcase']
+    badcase_total = len(badcase_results)
+    precise_total = 0
+    
+    # badcase精准数
+    for r in badcase_results:
+        if r.get('final_pass') == 'no':
+            tag = r.get('problem_tag', '')
+            expected_node = tag_node_map.get(tag, 0)
+            actual_node = r.get('finish_at_step', 0)
+            if expected_node > 0 and actual_node == expected_node:
+                precise_total += 1
+    
+    # goodcase精准数
+    for r in goodcase_results:
+        if r.get('final_pass') == 'yes' and r.get('finish_at_step', 0) == 5:
+            precise_total += 1
+    
+    # 节点有效率 = 精准数 / 所有case数
+    node_efficiency = round(precise_total / cases_total, 4) if cases_total > 0 else 0
 
     # 收集所有测试用例的提示词版本信息
     all_prompt_versions = {}
     for r in results_list:
         if 'prompt_versions' in r:
-            # 合并所有用例的版本信息，以第一个非unknown为准
             for key, version in r['prompt_versions'].items():
                 if key not in all_prompt_versions and version != 'unknown':
                     all_prompt_versions[key] = version
 
-    # 收集模型配置信息（所有用例应该使用相同的模型）
+    # 收集模型配置信息
     model_config = {}
     if results_list and 'model_config' in results_list[0]:
         model_config = results_list[0]['model_config']
 
-    # 简化results（只保留必要字段）
+    # 简化results（保留必要字段，新增is_precise）
     simplified_results = []
     for r in results_list:
-        # 确定expected_pass
         expected_pass = "no" if r.get('case_type') == 'badcase' else "yes"
+        
+        # 计算is_precise（针对所有case）
+        is_precise = False
+        if r.get('case_type') == 'badcase':
+            tag = r.get('problem_tag', '')
+            expected_node = tag_node_map.get(tag, 0)
+            actual_node = r.get('finish_at_step', 0)
+            is_precise = (r.get('final_pass') == 'no' and expected_node > 0 and actual_node == expected_node)
+        else:
+            # goodcase必须走完5个节点且final_pass="yes"
+            is_precise = (r.get('final_pass') == 'yes' and r.get('finish_at_step', 0) == 5)
 
         simplified_results.append({
             "case_id": r.get('case_id'),
@@ -78,19 +117,26 @@ def save_test_history(results_list):
             "expected_pass": expected_pass,
             "final_pass": r.get('final_pass'),
             "is_correct": r.get('is_correct'),
+            "is_precise": is_precise,
             "finish_at_step": r.get('finish_at_step'),
+            "expected_filter_node": tag_node_map.get(r.get('problem_tag', ''), 0),
             "parse_output": r.get('parse_output', {})
         })
 
     # 构建历史数据
+    badcase_correct = sum(1 for r in badcase_results if r.get('is_correct', False))
     history_data = {
         "test_id": test_id,
         "test_time": test_time,
         "cases_total": cases_total,
         "acc_total": acc_total,
         "acc_rate": acc_rate,
-        "prompt_versions": all_prompt_versions,  # 添加提示词版本信息
-        "model_config": model_config,  # 添加模型配置信息
+        "badcase_total": badcase_total,
+        "badcase_correct": badcase_correct,
+        "precise_total": precise_total,
+        "node_efficiency": node_efficiency,
+        "prompt_versions": all_prompt_versions,
+        "model_config": model_config,
         "results": simplified_results
     }
 

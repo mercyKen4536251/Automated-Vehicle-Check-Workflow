@@ -148,34 +148,78 @@ def activate_prompt_version(node_index, version):
 def get_problem_tags():
     return load_csv("problem_tags.csv")
 
-def add_problem_tag(tag_content):
-    """添加新标签"""
+def add_problem_tag(tag_content, expected_filter_node=1):
+    """
+    添加新标签
+    
+    Args:
+        tag_content: 标签内容
+        expected_filter_node: 预期被过滤的节点 (1-5)
+    
+    Returns:
+        int: 新标签的ID
+    """
     df = load_csv("problem_tags.csv")
     # 生成新的标签ID（自动递增）
     if df.empty:
         new_id = 1
     else:
-        new_id = df['tag_id'].max() + 1
+        new_id = int(df['tag_id'].max()) + 1
     
     new_row = {
         "tag_id": new_id,
-        "tag_content": tag_content
+        "tag_content": tag_content,
+        "expected_filter_node": expected_filter_node
     }
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     save_csv("problem_tags.csv", df)
     return new_id
 
-def update_problem_tag(tag_id, new_content):
-    """更新标签内容"""
+def update_problem_tag(tag_id, new_content=None, new_expected_node=None):
+    """
+    更新标签
+    
+    Args:
+        tag_id: 标签ID
+        new_content: 新的标签内容（可选）
+        new_expected_node: 新的预期过滤节点（可选）
+    
+    Returns:
+        bool: 是否更新成功
+    """
     df = load_csv("problem_tags.csv")
     # 查找标签
     idx = df[df['tag_id'] == tag_id].index
     if len(idx) == 0:
         return False
     
-    df.loc[idx[0], 'tag_content'] = new_content
+    if new_content is not None:
+        df.loc[idx[0], 'tag_content'] = new_content
+    if new_expected_node is not None:
+        df.loc[idx[0], 'expected_filter_node'] = new_expected_node
+    
     save_csv("problem_tags.csv", df)
     return True
+
+def get_expected_filter_node(tag_content):
+    """
+    根据标签内容获取预期过滤节点
+    
+    Args:
+        tag_content: 标签内容
+    
+    Returns:
+        int: 预期过滤节点 (1-5)，未找到返回 0
+    """
+    df = load_csv("problem_tags.csv")
+    if df.empty:
+        return 0
+    
+    tag_row = df[df['tag_content'] == tag_content]
+    if tag_row.empty:
+        return 0
+    
+    return int(tag_row.iloc[0]['expected_filter_node'])
 
 def delete_problem_tag(tag_id):
     """删除标签"""

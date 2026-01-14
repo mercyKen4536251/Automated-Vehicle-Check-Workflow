@@ -25,6 +25,15 @@ configs = load_model_configs_cached()
 tags_df = load_problem_tags_cached()
 tag_list = tags_df['tag_content'].tolist() if not tags_df.empty else []
 
+# 节点选项
+NODE_OPTIONS = {
+    1: "节点1: 存在性/可用性",
+    2: "节点2: 裁切检测",
+    3: "节点3: 车牌有字/无人驾驶",
+    4: "节点4: 视角一致性",
+    5: "节点5: 细节一致性"
+}
+
 # ==================== Dialog: 新增模型 ====================
 @st.dialog("➕ 新增模型配置", width="medium")
 def show_add_model_dialog():
@@ -83,6 +92,12 @@ def show_edit_model_dialog(config_data):
 @st.dialog("➕ 新增标签", width="medium")
 def show_add_tag_dialog():
     new_tag = st.text_input("标签名称", placeholder="例如: 裁切、车牌文字...", key="new_tag_name")
+    new_node = st.selectbox(
+        "预期过滤节点",
+        options=list(NODE_OPTIONS.keys()),
+        format_func=lambda x: NODE_OPTIONS[x],
+        key="new_tag_node"
+    )
     
     col_confirm, col_cancel = st.columns([1, 1])
     with col_confirm:
@@ -92,7 +107,7 @@ def show_add_tag_dialog():
             elif new_tag in tag_list:
                 st.error("标签已存在")
             else:
-                dm.add_problem_tag(new_tag)
+                dm.add_problem_tag(new_tag, new_node)
                 load_problem_tags_cached.clear()
                 st.toast("标签添加成功！", icon="✅")
                 time.sleep(0.5)
@@ -107,7 +122,16 @@ def show_edit_tag_dialog():
     tag_to_edit = st.selectbox("选择标签", tag_list, key="select_tag_to_edit")
     tag_row = tags_df[tags_df['tag_content'] == tag_to_edit].iloc[0]
     
-    new_tag_content = st.text_input("新名称", value=tag_to_edit, key="edit_tag_content")
+    new_tag_content = st.text_input("标签名称", value=tag_to_edit, key="edit_tag_content")
+    
+    current_node = int(tag_row['expected_filter_node']) if 'expected_filter_node' in tag_row else 1
+    new_node = st.selectbox(
+        "选择过滤节点",
+        options=list(NODE_OPTIONS.keys()),
+        format_func=lambda x: NODE_OPTIONS[x],
+        index=current_node - 1,
+        key="edit_tag_node"
+    )
     
     col_confirm, col_cancel = st.columns([1, 1])
     with col_confirm:
@@ -115,7 +139,7 @@ def show_edit_tag_dialog():
             if not new_tag_content:
                 st.error("标签名称不能为空")
             else:
-                dm.update_problem_tag(tag_row['tag_id'], new_tag_content)
+                dm.update_problem_tag(tag_row['tag_id'], new_tag_content, new_node)
                 load_problem_tags_cached.clear()
                 st.toast("标签修改成功！", icon="✅")
                 time.sleep(0.5)
@@ -152,7 +176,7 @@ with st.expander("🤖 模型配置", expanded=True):
         # 当前激活的配置（第一行）
         active_config = configs.iloc[0]
         
-        st.info(f" **当前模型:** `{active_config['model_id']}`  |   **思考模式:** `{active_config['thinking_mode']}`")
+        st.info(f"**当前模型:** `{active_config['model_id']}`　　**思考模式:** `{active_config['thinking_mode']}`")
         
         # 如果有多个配置，显示切换下拉框
         if len(configs) > 1:
@@ -174,7 +198,7 @@ with st.expander("🤖 模型配置", expanded=True):
                     time.sleep(0.5)
                     st.rerun()
         
-        # 操作按钮 
+        # 操作按钮
         btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 3])
         
         with btn_col1:
@@ -214,13 +238,22 @@ with st.expander("🏷️ 问题标签", expanded=True):
     if tags_df.empty:
         st.info("暂无问题标签")
     else:
+        # 构建标签展示列表（包含预期节点信息）
+        tag_display_list = []
+        for _, row in tags_df.iterrows():
+            node = int(row['expected_filter_node']) if 'expected_filter_node' in row else 0
+            node_name = NODE_OPTIONS.get(node, "未知")
+            tag_display_list.append(f"{row['tag_content']} → {node_name}")
+        
+        # 标签数量提示
+        st.info(f"共 **{len(tag_list)}** 个标签")
+
         # 下拉框展示标签
         st.selectbox(
-            "当前标签列表",
-            tag_list,
+            "查看标签列表",
+            tag_display_list,
             key="tag_view",
         )
-        st.caption(f"共 **{len(tag_list)}** 个标签")
     
     # 操作按钮
     btn_col1, btn_col2, btn_col3, _ = st.columns([1, 1, 1, 3])

@@ -30,7 +30,7 @@ pages = {
         st.Page(page_3, title="测试用例管理"),
     ],
     "Test": [
-        st.Page(page_4, title="运行用例"),
+        st.Page(page_4, title="执行测试"),
         st.Page(page_5, title="结果面板"),
     ],
 }
