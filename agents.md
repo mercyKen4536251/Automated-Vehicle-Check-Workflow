@@ -5,8 +5,9 @@
 ## 项目概述
 
 **项目名称**：自动化车辆审核工作流  
-**技术栈**：Python 3.10+, Streamlit, Pandas, 火山引擎VLM API  
+**技术栈**：Python 3.10+, FastAPI, Streamlit, Pandas, 火山引擎VLM API  
 **核心功能**：基于VLM模型的5节点串联审图系统  
+**架构**：前后端分离（FastAPI + Streamlit）
 
 ## 语言偏好
 
@@ -18,8 +19,14 @@
 # 安装依赖
 pip install -r requirements.txt
 
-# 运行应用
-streamlit run app.py
+# 一键启动（推荐）
+python start.py
+
+# 手动启动后端
+uvicorn backend.main:app --port 8000
+
+# 手动启动前端
+streamlit run pages/app.py
 
 # 清除缓存
 streamlit cache clear
@@ -86,6 +93,35 @@ return {
 
 ## 工程结构
 
+### 后端模块 (backend/) - v2.0 新增
+
+**main.py**
+- FastAPI 主入口
+- CORS 配置
+- 路由注册
+- 健康检查接口
+
+**api/models.py**
+- Pydantic 数据模型定义
+- 请求/响应模型
+- 数据验证
+
+**api/routes/test.py**
+- 测试任务相关 API
+- 提交任务、查询状态、取消任务
+- 任务列表、统计信息
+
+**tasks/manager.py**
+- 任务管理器（单例模式）
+- 任务创建、状态管理、查询
+- 线程安全的内存存储
+
+**tasks/executor.py**
+- 任务执行器
+- 在后台线程中执行测试任务
+- 实时更新任务进度
+- 保存测试历史
+
 ### 核心模块 (src/)
 
 **config_manager.py**
@@ -98,7 +134,7 @@ return {
 - 测试用例管理
 - 参考图库管理
 - 问题标签管理
-- 提示词管理
+- 提示词管理（路径：data/prompts/）
 
 **model_client.py**
 - VLM模型API调用封装
@@ -121,6 +157,11 @@ return {
 
 ### 页面模块 (pages/)
 
+**app.py**（移动到 pages/ 目录）
+- Streamlit 主入口
+- 页面导航配置
+- 路径调整（相对于 pages/）
+
 **manage/config.py**
 - 模型配置管理（新增/编辑/删除/切换）
 - 问题标签管理（新增/编辑/删除）
@@ -141,12 +182,13 @@ return {
 - 多维度筛选（车系/类型/标签）
 - goodcase不能选择标签
 
-**test/run_test.py**
-- 批量测试执行
-- 多线程并发处理（最多10个）
-- 实时进度显示
-- 多维度筛选
-- 结果保存到session_state
+**test/run_test.py**（v2.0 重构）
+- **累积选择**：使用 session_state 存储已选 case_id 集合
+- **后台执行**：调用后端 API 提交任务
+- **实时监控**：轮询任务状态，显示进度条
+- **任务管理**：支持取消任务
+- **多维度筛选**：车系、类型、标签
+- **后端连接检查**：确保后端服务可用
 
 **test/result.py**
 - 测试记录展示
@@ -255,7 +297,91 @@ case_id, car, case_type, problem_tag, case_url
 
 详见 [VERSION.md](../VERSION.md)
 
-当前版本：v1.5.0（2025-01-14）
+当前版本：v2.0.0（2025-01-15）
+
+## API 接口（v2.0 新增）
+
+### 测试任务 API
+
+**提交测试任务**
+```
+POST /api/test/submit
+Body: {"case_ids": [1, 2, 3]}
+Response: {"task_id": "abc123", "status": "pending", ...}
+```
+
+**查询任务状态**
+```
+GET /api/test/status/{task_id}
+Response: {"task_id": "abc123", "status": "running", "progress": {...}, ...}
+```
+
+**取消任务**
+```
+POST /api/test/cancel/{task_id}
+Response: {"message": "Task cancelled successfully"}
+```
+
+**获取任务列表**
+```
+GET /api/test/tasks?status=running&limit=10
+Response: {"tasks": [...], "total": 5}
+```
+
+**获取任务统计**
+```
+GET /api/test/stats
+Response: {"total": 10, "pending": 1, "running": 2, ...}
+```
+
+### 健康检查
+```
+GET /health
+Response: {"status": "ok"}
+```
+
+## 架构说明（v2.0）
+
+### 前后端分离
+
+**前端（Streamlit）**：
+- 纯 UI 展示层
+- 通过 HTTP 请求调用后端 API
+- 使用 session_state 管理前端状态
+- 轮询任务状态实现实时监控
+
+**后端（FastAPI）**：
+- 处理所有业务逻辑
+- 使用 BackgroundTasks 执行异步任务
+- 任务管理器（单例模式）管理任务状态
+- 提供 RESTful API
+
+**通信流程**：
+1. 前端提交任务 → POST /api/test/submit
+2. 后端创建任务 → 返回 task_id
+3. 后端在后台执行任务
+4. 前端轮询状态 → GET /api/test/status/{task_id}
+5. 任务完成 → 前端显示结果
+
+### 任务执行流程
+
+1. 用户在前端勾选用例（累积到 session_state）
+2. 点击"执行测试" → 调用 API 提交任务
+3. 后端创建任务记录（pending 状态）
+4. 后端启动 BackgroundTask 执行任务
+5. 任务状态变为 running
+6. 逐个执行测试用例，实时更新进度
+7. 任务完成，状态变为 completed
+8. 保存测试历史到 data/test_history/
+9. 前端显示最终结果
+
+### 扩展性
+
+当前架构预留了升级空间：
+- 可轻松升级到 Celery + Redis
+- 支持分布式任务队列
+- 支持任务持久化
+- 支持定时任务
 
 ## 相关文档
 

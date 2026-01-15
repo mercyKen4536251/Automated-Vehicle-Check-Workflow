@@ -48,7 +48,7 @@ def get_refs():
 def get_prompts():
     prompts = {}
     for i in range(1, 6):
-        filename = f"prompt_0{i}.csv"
+        filename = f"prompts/prompt_0{i}.csv"
         df = load_csv(filename)
         if not df.empty:
             # Get the active one or the last one
@@ -69,7 +69,7 @@ def get_prompt_versions(node_index):
     Returns:
         DataFrame: 包含所有版本记录的数据框
     """
-    filename = f"prompt_0{node_index}.csv"
+    filename = f"prompts/prompt_0{node_index}.csv"
     df = load_csv(filename)
     if not df.empty:
         return df.sort_index(ascending=False)  # 最新的在前
@@ -92,7 +92,7 @@ def update_prompt(node_index, content, version):
             operation_type: 'update' (修改) 或 'create' (新增)
             version: 最终的版本号
     """
-    filename = f"prompt_0{node_index}.csv"
+    filename = f"prompts/prompt_0{node_index}.csv"
     df = load_csv(filename)
 
     # 检查版本号是否已存在
@@ -128,7 +128,7 @@ def activate_prompt_version(node_index, version):
         node_index: 节点索引 (1-5)
         version: 要激活的版本号
     """
-    filename = f"prompt_0{node_index}.csv"
+    filename = f"prompts/prompt_0{node_index}.csv"
     df = load_csv(filename)
 
     if df.empty:

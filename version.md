@@ -1,5 +1,59 @@
 # 版本历史
 
+## v2.0.0（2025-01-15）
+
+**架构重构 - 前后端分离**:
+- 引入 FastAPI 后端，实现真正的前后端分离架构
+- 后端使用 BackgroundTasks 实现异步任务执行
+- 前端通过 RESTful API 与后端通信
+- 任务在后台执行，不阻塞 UI，用户可自由操作
+
+**运行中心重大升级**:
+- 实现累积选择功能：支持跨筛选条件累积勾选用例
+- 任务提交后在后台执行，用户可继续操作（切换页面、勾选新用例）
+- 实时任务监控：显示进度条、当前执行用例、完成/失败数量
+- 支持任务取消功能
+- 任务完成后自动清空选择，准备下一轮测试
+
+**目录结构优化**:
+- 创建 `data/prompts/` 目录，统一管理提示词文件
+- 移动 `app.py` 到 `pages/` 目录，结构更清晰
+- 新增 `backend/` 目录，包含完整的后端代码
+- 新增 `start.py` 一键启动脚本
+
+**后端架构**:
+- `backend/main.py`: FastAPI 主入口
+- `backend/api/models.py`: Pydantic 数据模型
+- `backend/api/routes/test.py`: 测试任务 API 路由
+- `backend/tasks/manager.py`: 任务管理器（单例模式）
+- `backend/tasks/executor.py`: 任务执行器
+
+**API 接口**:
+- `POST /api/test/submit`: 提交测试任务
+- `GET /api/test/status/{task_id}`: 查询任务状态
+- `POST /api/test/cancel/{task_id}`: 取消任务
+- `GET /api/test/tasks`: 获取任务列表
+- `GET /api/test/stats`: 获取任务统计
+- `GET /health`: 健康检查
+
+**启动方式变更**:
+- 旧版：`streamlit run app.py`
+- 新版：`python start.py`（自动启动后端+前端）
+- 后端 API: http://localhost:8000
+- 前端界面: http://localhost:8501
+- API 文档: http://localhost:8000/docs
+
+**依赖更新**:
+- 新增 `fastapi>=0.104.0`
+- 新增 `uvicorn>=0.24.0`
+- 新增 `pydantic>=2.5.0`
+- 新增 `requests>=2.31.0`
+
+**未来扩展性**:
+- 预留升级到 Celery + Redis 的架构空间
+- 支持多用户、任务队列、定时任务等高级功能
+- 可轻松添加更多 API 接口
+
 ## v1.5.0（2025-01-14）
 
 **运行中心UI优化**:

@@ -2,9 +2,11 @@ import streamlit as st
 import sys
 import os
 
-# 添加src到路径
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-import config_manager as cm
+# 添加项目根目录到路径（app.py 现在在 pages/ 下）
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PROJECT_ROOT)
+
+from src import config_manager as cm
 from src import data_manager as dm
 
 # ==================== 页面配置 ====================
@@ -15,12 +17,12 @@ st.set_page_config(
 )
 
 # ==================== 页面地址 ====================
-page_0 = "pages\\manage\\config.py"
-page_1 = "pages\\manage\\prompt.py"
-page_2 = "pages\\manage\\ref_gallery.py"
-page_3 = "pages\\manage\\test_cases.py"
-page_4 = "pages\\test\\run_test.py"
-page_5 = "pages\\test\\result.py"
+page_0 = "manage\\config.py"
+page_1 = "manage\\prompt.py"
+page_2 = "manage\\ref_gallery.py"
+page_3 = "manage\\test_cases.py"
+page_4 = "test\\run_test.py"
+page_5 = "test\\result.py"
 
 pages = {
     "Manage": [

@@ -2,9 +2,12 @@
 
 基于VLM模型的自动化车辆审核系统，通过5个智能体节点进行多维度图像审核。
 
+**v2.0.0 重大更新**：前后端分离架构，真正的后台任务执行，累积选择功能，不阻塞UI！
+
 ## 📋 目录
 
 - [快速开始](#快速开始)
+- [架构说明](#架构说明)
 - [核心功能](#核心功能)
 - [使用流程](#使用流程)
 - [审图工作流](#审图工作流)
@@ -15,21 +18,55 @@
 
 ### 环境要求
 - Python 3.10+
-- Streamlit
+- FastAPI + Uvicorn（后端）
+- Streamlit（前端）
 - Pandas
 - 火山引擎API Key
 
 ### 安装与运行
 
 ```bash
-# 安装依赖
+# 1. 克隆项目
+git clone <repository-url>
+cd <project-directory>
+
+# 2. 安装依赖
 pip install -r requirements.txt
 
-# 启动应用
-streamlit run app.py
+# 3. 一键启动（自动启动后端+前端）
+python start.py
 ```
 
-应用将在 `http://localhost:8501` 启动
+**服务地址**：
+- 🎨 前端界面：http://localhost:8501
+- 📡 后端 API：http://localhost:8000
+- 📚 API 文档：http://localhost:8000/docs
+
+**退出**：按 `Ctrl+C` 关闭所有服务
+
+## 架构说明
+
+### v2.0.0 架构重构
+
+项目采用**前后端分离架构**，解决了以往测试任务阻塞UI的问题：
+
+**前端（Streamlit）**：
+- 纯UI展示层，负责用户交互
+- 通过 RESTful API 与后端通信
+- 支持实时任务监控和进度显示
+
+**后端（FastAPI）**：
+- 处理所有业务逻辑
+- 使用 BackgroundTasks 实现异步任务执行
+- 提供完整的 RESTful API
+
+**核心优势**：
+- ✅ 任务在后台执行，不阻塞UI
+- ✅ 用户可自由操作（切换页面、勾选新用例）
+- ✅ 累积选择功能：支持跨筛选条件累积勾选用例
+- ✅ 实时任务监控：进度条、当前执行用例、完成/失败数量
+- ✅ 支持任务取消
+- ✅ 预留升级到 Celery + Redis 的架构空间
 
 ## 核心功能
 
@@ -54,11 +91,13 @@ streamlit run app.py
 - 多维度筛选（车系、类型、标签）
 - 支持批量删除
 
-### 🚀 运行中心
-- 批量执行测试用例
-- 多线程并发处理（最多3个并发）
-- 实时进度显示
-- 多维度筛选（车系、类型、标签）
+### 🚀 运行中心（v2.0 重大升级）
+- **累积选择**：支持跨筛选条件累积勾选用例
+- **后台执行**：任务提交后在后台运行，不阻塞UI
+- **实时监控**：显示进度条、当前执行用例、完成/失败数量
+- **任务管理**：支持取消正在执行的任务
+- **多维度筛选**：车系、类型、标签
+- **自由操作**：测试执行期间可切换页面、勾选新用例
 
 ### 📊 结果面板
 - **测试记录**：查看历史测试记录，支持删除
@@ -122,37 +161,53 @@ streamlit run app.py
 
 ```
 .
-├── app.py                          # 主应用入口
+├── start.py                        # 一键启动脚本（新增）
 ├── requirements.txt                # 依赖配置
 ├── README.md                       # 项目文档
 ├── VERSION.md                      # 版本历史
 ├── AGENTS.md                       # AI工程文档
 ├── LICENSE                         # 许可证
 │
-├── data/                           # 数据目录
-│   ├── model_config.csv           # 模型配置数据
-│   ├── problem_tags.csv           # 问题标签数据
-│   ├── prompt_01.csv ~ prompt_05.csv  # 5个节点的提示词
-│   ├── ref.csv                    # 参考图库数据
-│   ├── test_cases.csv             # 测试用例数据
-│   └── test_history/              # 测试历史记录（JSON）
+├── backend/                        # FastAPI 后端（新增）
+│   ├── main.py                    # FastAPI 主入口
+│   ├── api/
+│   │   ├── models.py              # Pydantic 数据模型
+│   │   └── routes/
+│   │       └── test.py            # 测试任务 API 路由
+│   └── tasks/
+│       ├── manager.py             # 任务管理器（单例模式）
+│       └── executor.py            # 任务执行器
 │
-├── src/                            # 核心模块
-│   ├── config_manager.py          # 模型配置管理
-│   ├── data_manager.py            # 数据管理（CSV操作）
-│   ├── history_manager.py         # 测试历史管理
-│   ├── model_client.py            # VLM模型客户端
-│   └── workflow_engine.py         # 5节点工作流引擎
-│
-├── pages/                          # Streamlit页面
+├── pages/                          # Streamlit 前端
+│   ├── app.py                     # Streamlit 主入口（移动到此）
 │   ├── manage/                    # 管理页面
 │   │   ├── config.py              # 配置管理
 │   │   ├── prompt.py              # 提示词管理
 │   │   ├── ref_gallery.py         # 参考图库管理
 │   │   └── test_cases.py          # 测试用例管理
 │   └── test/                      # 测试页面
-│       ├── run_test.py            # 运行中心
+│       ├── run_test.py            # 运行中心（重构）
 │       └── result.py              # 结果面板
+│
+├── src/                            # 核心业务逻辑
+│   ├── config_manager.py          # 模型配置管理
+│   ├── data_manager.py            # 数据管理（CSV操作）
+│   ├── history_manager.py         # 测试历史管理
+│   ├── model_client.py            # VLM模型客户端
+│   └── workflow_engine.py         # 5节点工作流引擎
+│
+├── data/                           # 数据目录
+│   ├── model_config.csv           # 模型配置数据
+│   ├── problem_tags.csv           # 问题标签数据
+│   ├── prompts/                   # 提示词目录（新增）
+│   │   ├── prompt_01.csv          # 节点1提示词
+│   │   ├── prompt_02.csv          # 节点2提示词
+│   │   ├── prompt_03.csv          # 节点3提示词
+│   │   ├── prompt_04.csv          # 节点4提示词
+│   │   └── prompt_05.csv          # 节点5提示词
+│   ├── ref.csv                    # 参考图库数据
+│   ├── test_cases.csv             # 测试用例数据
+│   └── test_history/              # 测试历史记录（JSON）
 │
 └── 0-Notes/                        # 项目笔记
     └── Todo.md                    # 待办事项
@@ -162,13 +217,15 @@ streamlit run app.py
 
 详见 [VERSION.md](VERSION.md)
 
-### 最新版本：v1.4.0
+### 最新版本：v2.0.0（2025-01-15）
 
-主要改动：
-- 模型客户端重构，优化消息结构
-- 工作流引擎优化，提高业务逻辑清晰度
-- 节点有效率指标完善
-- 结果面板重构，改进用户体验
+**架构重构 - 前后端分离**：
+- 引入 FastAPI 后端，实现真正的前后端分离
+- 任务在后台执行，不阻塞UI
+- 累积选择功能：支持跨筛选条件累积勾选用例
+- 实时任务监控：进度条、状态显示、任务取消
+- 目录结构优化：prompts 独立目录，app.py 移至 pages/
+- 一键启动脚本：`python start.py`
 
 [查看完整版本历史 →](VERSION.md)
 
@@ -176,8 +233,9 @@ streamlit run app.py
 
 ### 代码规范
 - 语言：Python 3.10+
-- 框架：Streamlit
-- 文档字符串：中文，包含Args/Returns说明
+- 后端框架：FastAPI
+- 前端框架：Streamlit
+- 文档字符串：中英文双语，包含Args/Returns说明
 - 命名：snake_case（函数/变量），PascalCase（类）
 - 字符串：双引号
 - 代码分区：使用 `=` 分隔符
@@ -187,12 +245,28 @@ streamlit run app.py
 # 安装依赖
 pip install -r requirements.txt
 
-# 运行应用
-streamlit run app.py
+# 一键启动（推荐）
+python start.py
+
+# 手动启动后端
+uvicorn backend.main:app --port 8000
+
+# 手动启动前端
+streamlit run pages/app.py
 
 # 清除缓存
 streamlit cache clear
 ```
+
+### API 文档
+启动后访问 http://localhost:8000/docs 查看完整的 API 文档（Swagger UI）
+
+### 架构扩展
+当前使用 FastAPI BackgroundTasks，未来可轻松升级到：
+- Celery + Redis：分布式任务队列
+- 多 Worker：并发处理能力
+- 任务持久化：重启不丢失任务
+- 定时任务：自动化测试
 
 ## 许可证
 
