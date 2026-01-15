@@ -143,7 +143,7 @@ return {
 
 **test/run_test.py**
 - 批量测试执行
-- 多线程并发处理（最多3个）
+- 多线程并发处理（最多10个）
 - 实时进度显示
 - 多维度筛选
 - 结果保存到session_state
@@ -255,7 +255,7 @@ case_id, car, case_type, problem_tag, case_url
 
 详见 [VERSION.md](../VERSION.md)
 
-当前版本：v1.4.0（2025-01-14）
+当前版本：v1.5.0（2025-01-14）
 
 ## 相关文档
 
