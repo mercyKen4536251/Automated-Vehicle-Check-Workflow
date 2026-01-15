@@ -92,27 +92,7 @@ with st.container(border=True):
                     versions_str = " | ".join([f"{k}: {v}" for k, v in prompt_versions.items()]) if prompt_versions else "未知"
                     
                     st.info(f"**模型:** {model_id}  \n\n**思考模式:** {thinking_mode}  \n\n**提示词版本:** {versions_str}")
-                    
-                    st.divider()
-
-                    # ========== 核心指标 ==========
-                    total_runs = len(results_df)
-                    correct_runs = len(results_df[results_df["is_correct"] == True])
-                    accuracy = (correct_runs / total_runs * 100) if total_runs > 0 else 0
-                    
-                    if "is_precise" in results_df.columns:
-                        precise_count = len(results_df[results_df["is_precise"] == True])
-                    else:
-                        precise_count = 0
-                    node_efficiency = (precise_count / total_runs * 100) if total_runs > 0 else 0
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    col1.metric("测试总数", total_runs)
-                    col2.metric("通过数", correct_runs)
-                    col3.metric("审图准确率", f"{accuracy:.1f}%")
-                    col4.metric("节点有效率", f"{node_efficiency:.1f}%", help="在预期节点被正确处理的case占比")
-                    
-                    st.divider()
+                    st.write("")
 
                     # ========== 筛选器 ==========
                     st.markdown("#### 📝 详细列表")
@@ -163,6 +143,15 @@ with st.container(border=True):
                     # ========== 应用筛选 ==========
                     display_df = results_df.copy()
                     
+                    # 重新计算is_correct（使用新逻辑，不依赖历史数据）
+                    def recalculate_is_correct(row):
+                        if row["case_type"] == "badcase":
+                            return row["final_pass"] == "no"
+                        else:
+                            return row["final_pass"] in ["yes", "unknown"]
+                    
+                    display_df["is_correct"] = display_df.apply(recalculate_is_correct, axis=1)
+                    
                     if filter_result == "仅正确":
                         display_df = display_df[display_df["is_correct"] == True]
                     elif filter_result == "仅错误":
@@ -181,6 +170,27 @@ with st.container(border=True):
                     
                     if filter_tags and not only_goodcase:
                         display_df = display_df[display_df["problem_tag"].isin(filter_tags)]
+                    
+                    # ========== 核心指标（基于筛选后的数据实时计算）==========
+                    total_runs = len(display_df)
+                    correct_runs = len(display_df[display_df["is_correct"] == True]) if total_runs > 0 else 0
+                    accuracy = (correct_runs / total_runs * 100) if total_runs > 0 else 0
+                    
+                    if "is_precise" in display_df.columns and total_runs > 0:
+                        precise_count = len(display_df[display_df["is_precise"] == True])
+                    else:
+                        precise_count = 0
+                    node_efficiency = (precise_count / total_runs * 100) if total_runs > 0 else 0
+                    
+                    st.markdown("---")
+
+                    col1, col2, col3, col4 = st.columns(4)
+                    col1.metric("测试总数", total_runs)
+                    col2.metric("通过数", correct_runs)
+                    col3.metric("审图准确率", f"{accuracy:.1f}%")
+                    col4.metric("节点有效率", f"{node_efficiency:.1f}%", help="在预期节点被正确处理的case占比")
+
+                    st.markdown("---")
                     
                     st.caption(f"筛选后共 **{len(display_df)}** 条结果")
 

@@ -1,5 +1,33 @@
 # 版本历史
 
+## v1.5.0（2025-01-14）
+
+**运行中心UI优化**:
+- 移除逐行日志展示，改为动态单行状态显示
+- 使用 `st.empty()` 实现实时状态更新
+- 状态格式：`✅ 正在处理 Case 1 (问界M8) - 1/10`
+
+**审图准确率判断逻辑调整**:
+- badcase：`final_pass="no"` 才算正确（严格）
+- goodcase：`final_pass="yes"` 或 `final_pass="unknown"` 都算正确（宽松）
+- 原因：goodcase的unknown表示无法判定（如缺少参考图），不是图片本身的问题
+
+**结果面板metric实时计算**:
+- 将筛选器移到配置信息下方
+- metric计算基于筛选后的数据，而非全量数据
+- 筛选条件变化时，metric自动重新计算
+- metric位置保持不变（筛选器下方）
+
+**前端数据处理优化**:
+- 在前端重新计算 `is_correct`，使用新逻辑
+- 兼容历史数据，即使旧数据也能正确显示新逻辑的结果
+- 确保审图准确率和节点有效率的区别正确体现
+
+**节点有效率保持严格标准**:
+- badcase：`final_pass="no"` 且在预期节点被过滤
+- goodcase：`final_pass="yes"` 且经过节点5
+- 不受审图准确率宽松逻辑影响
+
 ## v1.4.0（2025-01-14）
 
 **模型客户端重构**:
@@ -31,34 +59,32 @@
 - 完善审图准确率判断逻辑，适配final_pass三态（yes/no/unknown）
 
 ## v1.3.0（2025-01-14）
-完成！主要改动总结：
 
-1. 数据结构 (data/problem_tags.csv)
+**数据结构优化**:
+- 新增 `expected_filter_node` 字段到 `problem_tags.csv`，标记每个标签预期在哪个节点被过滤
 
-新增 expected_filter_node 字段，标记每个标签预期在哪个节点被过滤
-2. 数据管理 (src/data_manager.py)
+**数据管理模块**:
+- `add_problem_tag()` 支持传入 `expected_filter_node`
+- `update_problem_tag()` 支持更新 `expected_filter_node`
+- 新增 `get_expected_filter_node()` 函数
 
-add_problem_tag() 支持传入 expected_filter_node
-update_problem_tag() 支持更新 expected_filter_node
-新增 get_expected_filter_node() 函数
-3. 配置管理 (pages/manage/config.py)
+**配置管理页面**:
+- 标签展示包含预期过滤节点信息
+- 新增/编辑标签时可选择预期过滤节点（下拉选择1-5）
 
-标签展示包含预期过滤节点信息
-新增/编辑标签时可选择预期过滤节点（下拉选择1-5）
-4. 历史管理 (src/history_manager.py)
+**历史管理模块**:
+- `save_test_history()` 接收 `tag_node_map` 参数
+- 新增指标：`badcase_total`、`badcase_correct`、`precise_total`、`node_efficiency`
+- 每条结果新增 `is_precise` 和 `expected_filter_node` 字段
 
-save_test_history() 接收 tag_node_map 参数
-新增指标：badcase_total、badcase_correct、precise_total、node_efficiency
-每条结果新增 is_precise 和 expected_filter_node 字段
-5. 运行测试 (pages/test/run_test.py)
+**运行测试页面**:
+- 保存历史时传入标签到节点的映射
 
-保存历史时传入标签到节点的映射
-6. 结果面板 (pages/test/result.py)
-
-新增"节点有效率"指标展示
-新增"节点不精准"筛选选项
-列表中显示节点信息，不精准的标记 ⚠️
-历史记录也显示节点有效率
+**结果面板**:
+- 新增"节点有效率"指标展示
+- 新增"节点不精准"筛选选项
+- 列表中显示节点信息，不精准的标记 ⚠️
+- 历史记录也显示节点有效率
 
 ## v1.2.0 (2025-01-13)
 

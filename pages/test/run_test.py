@@ -152,81 +152,83 @@ if st.button("▶️ 执行测试", disabled=start_disabled):
     completed = 0
     
     progress_bar = st.progress(0, text="准备中...")
+    status_text = st.empty()
+    status_text.text("⏳ 正在初始化...")
     
-    with st.status("🚀 测试执行中...", expanded=True) as status:
-        status.write("正在初始化...")
-        
-        with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
             future_to_case = {}
             
-            for idx, row in selected_cases.iterrows():
-                ref_row = refs_df[refs_df['car'] == row['car']]
-                if ref_row.empty:
-                    status.write(f"⚠️ 跳过 Case {row['case_id']}：缺少 {row['car']} 的参考图")
-                    continue
-                
-                ref_data = ref_row.iloc[0].to_dict()
-                future = executor.submit(we.run_workflow_for_case, row.to_dict(), ref_data, all_prompts)
-                future_to_case[future] = row.to_dict()
-            
-            real_total = len(future_to_case)
-            
-            if real_total == 0:
-                progress_bar.progress(100, text="完成")
-                status.update(label="❌ 没有有效任务", state="error")
-                st.session_state.test_running = False
-                st.stop()
-            
-            for future in as_completed(future_to_case):
-                case_info = future_to_case[future]
-                try:
-                    res = future.result()
-                    
-                    res['case_id'] = case_info['case_id']
-                    res['car'] = case_info['car']
-                    res['case_type'] = case_info['case_type']
-                    res['problem_tag'] = case_info.get('problem_tag', '')
-                    res['case_url'] = case_info['case_url']
-                    
-                    # 判断is_correct：
-                    # - badcase: final_pass="no"才算正确
-                    # - goodcase: final_pass="yes"才算正确
-                    # - final_pass="unknown"无论哪种都算错误
-                    if case_info['case_type'] == 'badcase':
-                        is_correct = (res['final_pass'] == 'no')
-                    else:
-                        is_correct = (res['final_pass'] == 'yes')
-                    res['is_correct'] = is_correct
-                    
-                    # 计算is_precise（针对所有case）
-                    # 节点有效率 = 在预期节点被正确处理的case / 所有case
-                    # - badcase: final_pass="no"且在预期节点被过滤
-                    # - goodcase: final_pass="yes"且经过节点5（goodcase没有标签，必须走完5个节点）
-                    is_precise = False
-                    if case_info['case_type'] == 'badcase':
-                        problem_tag = case_info.get('problem_tag', '')
-                        expected_node = tag_node_map.get(problem_tag, 0)
-                        actual_node = res.get('finish_at_step', 0)
-                        is_precise = (res['final_pass'] == 'no' and expected_node == actual_node)
-                    else:
-                        # goodcase必须走完5个节点且final_pass="yes"
-                        is_precise = (res['final_pass'] == 'yes' and res.get('finish_at_step', 0) == 5)
-                    res['is_precise'] = is_precise
-                    
-                    st.session_state.results.append(res)
-                    
-                    completed += 1
-                    progress = completed / real_total
-                    progress_bar.progress(progress, text=f"进度: {completed}/{real_total}")
-                    
-                    icon = '✅' if is_correct else '❌'
-                    expected = "no" if case_info['case_type'] == 'badcase' else "yes"
-                    status.write(f"{icon} Case {res['case_id']} | {res['car']} | 预期: {expected} | 实际: {res['final_pass']}")
-                    
-                except Exception as e:
-                    status.write(f"❌ Case {case_info['case_id']} 执行出错: {e}")
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        future_to_case = {}
         
-        status.update(label="✅ 测试执行完毕!", state="complete")
+        for idx, row in selected_cases.iterrows():
+            ref_row = refs_df[refs_df['car'] == row['car']]
+            if ref_row.empty:
+                status_text.text(f"⚠️ 跳过 Case {row['case_id']}：缺少 {row['car']} 的参考图")
+                time.sleep(0.3)
+                continue
+            
+            ref_data = ref_row.iloc[0].to_dict()
+            future = executor.submit(we.run_workflow_for_case, row.to_dict(), ref_data, all_prompts)
+            future_to_case[future] = row.to_dict()
+        
+        real_total = len(future_to_case)
+        
+        if real_total == 0:
+            progress_bar.progress(100, text="完成")
+            status_text.text("❌ 没有有效任务")
+            st.session_state.test_running = False
+            st.stop()
+        
+        for future in as_completed(future_to_case):
+            case_info = future_to_case[future]
+            try:
+                res = future.result()
+                
+                res['case_id'] = case_info['case_id']
+                res['car'] = case_info['car']
+                res['case_type'] = case_info['case_type']
+                res['problem_tag'] = case_info.get('problem_tag', '')
+                res['case_url'] = case_info['case_url']
+                
+                # 判断is_correct：
+                # - badcase: final_pass="no"才算正确
+                # - goodcase: final_pass="yes"或"unknown"都算正确
+                if case_info['case_type'] == 'badcase':
+                    is_correct = (res['final_pass'] == 'no')
+                else:
+                    is_correct = (res['final_pass'] in ['yes', 'unknown'])
+                res['is_correct'] = is_correct
+                
+                # 计算is_precise（针对所有case）
+                # 节点有效率 = 在预期节点被正确处理的case / 所有case
+                # - badcase: final_pass="no"且在预期节点被过滤
+                # - goodcase: final_pass="yes"且经过节点5（保持严格）
+                is_precise = False
+                if case_info['case_type'] == 'badcase':
+                    problem_tag = case_info.get('problem_tag', '')
+                    expected_node = tag_node_map.get(problem_tag, 0)
+                    actual_node = res.get('finish_at_step', 0)
+                    is_precise = (res['final_pass'] == 'no' and expected_node == actual_node)
+                else:
+                    is_precise = (res['final_pass'] == 'yes' and res.get('finish_at_step', 0) == 5)
+                res['is_precise'] = is_precise
+                
+                st.session_state.results.append(res)
+                
+                completed += 1
+                progress = completed / real_total
+                progress_bar.progress(progress, text=f"进度: {completed}/{real_total}")
+                
+                # 动态更新状态文本
+                icon = '✅' if is_correct else '❌'
+                status_text.text(f"{icon} 正在处理 Case {res['case_id']} ({res['car']}) - {completed}/{real_total}")
+                
+            except Exception as e:
+                status_text.text(f"❌ Case {case_info['case_id']} 执行出错: {e}")
+                time.sleep(0.5)
+    
+    status_text.text("✅ 测试执行完毕！")
     
     if st.session_state.results:
         try:
