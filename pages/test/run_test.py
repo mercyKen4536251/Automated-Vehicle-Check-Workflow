@@ -1,7 +1,6 @@
 import streamlit as st
 import sys
 import os
-import time
 import requests
 import pandas as pd
 
@@ -13,11 +12,48 @@ from src import data_manager as dm
 
 # ==================== 配置 ====================
 BACKEND_URL = "http://localhost:8000"
+API_TIMEOUT = 30  # API 请求超时时间（秒）
+MAX_CONCURRENT_TASKS = 3  # 最大并发任务数
 
 # ==================== 缓存函数 ====================
 @st.cache_data(ttl=300)
 def load_test_cases_cached():
     return dm.get_test_cases()
+
+def check_backend_connection():
+    """
+    检查后端连接
+    
+    Check backend connection
+    
+    Returns:
+        bool: 是否连接成功
+    """
+    try:
+        response = requests.get(f"{BACKEND_URL}/health", timeout=3)
+        return response.status_code == 200
+    except:
+        return False
+
+def get_running_tasks_count():
+    """
+    获取运行中的任务数量
+    
+    Get running tasks count
+    
+    Returns:
+        int: 运行中的任务数量
+    """
+    try:
+        response = requests.get(
+            f"{BACKEND_URL}/api/test/tasks?status=running&limit=10",
+            timeout=5
+        )
+        if response.status_code == 200:
+            return len(response.json().get("tasks", []))
+    except:
+        pass
+    return 0
 
 # ==================== 页面标题 ====================
 st.header("🚀 运行中心")
@@ -30,15 +66,13 @@ if cases.empty:
     st.warning("⚠️ 暂无测试用例，请前往【测试用例管理】页面添加。")
     st.stop()
 
-# ==================== 初始化 session_state ====================
-if "selected_case_ids" not in st.session_state:
-    st.session_state.selected_case_ids = set()
+# ==================== 检查后端连接 ====================
+backend_available = check_backend_connection()
 
-if "current_task_id" not in st.session_state:
-    st.session_state.current_task_id = None
-
-if "task_submitted" not in st.session_state:
-    st.session_state.task_submitted = False
+if not backend_available:
+    st.error("❌ 无法连接到后端服务")
+    st.info("💡 请确保后端已启动：`python start.py` 或 `uvicorn backend.main:app --port 8000`")
+    st.stop()
 
 # ==================== 模块1: 测试用例选择 ====================
 st.info(f"📊 共 **{len(cases)}** 条测试用例，请筛选并勾选要测试的用例")
@@ -103,6 +137,7 @@ with st.container(border=True):
     # ========== 表格展示 ==========
     if cases_sorted.empty:
         st.warning("⚠️ 没有符合筛选条件的用例")
+        selected_cases = pd.DataFrame()
     else:
         event = st.dataframe(
             cases_sorted,
@@ -120,177 +155,50 @@ with st.container(border=True):
             key="run_case_selector"
         )
         
-        # ========== 累积选择逻辑 ==========
-        # 获取当前表格中选中的行
+        # 获取选中的行
         selected_rows = event.selection.rows
-        if selected_rows:
-            # 将选中的 case_id 添加到累积集合
-            selected_case_ids_in_table = cases_sorted.iloc[selected_rows]["case_id"].tolist()
-            st.session_state.selected_case_ids.update(selected_case_ids_in_table)
-    
-    # ========== 显示累积选择状态 ==========
-    st.markdown("---")
-    col_status, col_clear = st.columns([3, 1])
-    
-    with col_status:
-        total_selected = len(st.session_state.selected_case_ids)
-        if total_selected > 0:
-            st.success(f"✅ 已累积选择 **{total_selected}** 条用例（跨筛选条件累积）")
-        else:
-            st.info("💡 请勾选用例，支持切换筛选条件后继续累积选择")
-    
-    with col_clear:
-        if st.button("🗑️ 清空选择", disabled=total_selected == 0):
-            st.session_state.selected_case_ids.clear()
-            st.rerun()
+        selected_cases = cases_sorted.iloc[selected_rows] if selected_rows else pd.DataFrame()
 
-st.write("")
+    # ========== 显示选择状态 ==========
+    st.caption(f"已选择 **{len(selected_cases)}** 条用例")
 
-# ==================== 模块2: 任务提交与监控 ====================
+# ==================== 模块2: 任务提交 ====================
 
-# 检查后端连接
-try:
-    health_check = requests.get(f"{BACKEND_URL}/health", timeout=2)
-    backend_available = health_check.status_code == 200
-except:
-    backend_available = False
+# 获取运行中的任务数
+running_count = get_running_tasks_count()
 
-if not backend_available:
-    st.error("❌ 无法连接到后端服务，请确保后端已启动（运行 `python start.py`）")
-    st.stop()
-
-# ========== 提交测试 ==========
-no_selection = len(st.session_state.selected_case_ids) == 0
+# 判断是否可以提交新任务
+can_submit = running_count < MAX_CONCURRENT_TASKS
+no_selection = len(selected_cases) == 0
 
 if no_selection:
     st.warning("⚠️ 请勾选需要测试的用例")
+elif not can_submit:
+    st.warning(f"⚠️ 当前有 {running_count} 个任务正在运行，已达到最大并发数（{MAX_CONCURRENT_TASKS}），请等待任务完成后再提交")
 
-col_submit, col_cancel = st.columns([3, 1])
-
-with col_submit:
-    if st.button("▶️ 执行测试", disabled=no_selection or st.session_state.task_submitted):
-        # 提交任务到后端
-        try:
-            response = requests.post(
-                f"{BACKEND_URL}/api/test/submit",
-                json={"case_ids": list(st.session_state.selected_case_ids)},
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                st.session_state.current_task_id = result["task_id"]
-                st.session_state.task_submitted = True
-                st.toast(f"✅ 任务已提交！任务ID: {result['task_id']}", icon="✅")
-                st.rerun()
-            else:
-                st.error(f"❌ 提交失败: {response.text}")
-        except Exception as e:
-            st.error(f"❌ 提交失败: {e}")
-
-with col_cancel:
-    if st.button("⏹️ 取消任务", disabled=not st.session_state.task_submitted):
-        if st.session_state.current_task_id:
-            try:
-                response = requests.post(
-                    f"{BACKEND_URL}/api/test/cancel/{st.session_state.current_task_id}",
-                    timeout=5
-                )
-                if response.status_code == 200:
-                    st.toast("✅ 任务已取消", icon="⏹️")
-                    st.session_state.task_submitted = False
-                    st.session_state.current_task_id = None
-                    st.rerun()
-            except Exception as e:
-                st.error(f"❌ 取消失败: {e}")
-
-# ========== 任务监控 ==========
-if st.session_state.task_submitted and st.session_state.current_task_id:
-    st.markdown("---")
-    st.subheader("📊 任务执行状态")
-    
-    # 创建占位符
-    status_container = st.container()
-    progress_placeholder = st.empty()
-    metrics_placeholder = st.empty()
-    
-    # 轮询任务状态
+if st.button("▶️ 执行测试", disabled=no_selection or not can_submit, type="primary"):
+    # 提交任务到后端
     try:
-        response = requests.get(
-            f"{BACKEND_URL}/api/test/status/{st.session_state.current_task_id}",
-            timeout=5
+        case_ids = selected_cases["case_id"].tolist()
+        response = requests.post(
+            f"{BACKEND_URL}/api/test/submit",
+            json={"case_ids": case_ids},
+            timeout=API_TIMEOUT
         )
         
         if response.status_code == 200:
-            task_status = response.json()
-            
-            status = task_status["status"]
-            progress = task_status["progress"]
-            
-            # 显示进度条
-            if progress["total"] > 0:
-                progress_value = progress["completed"] / progress["total"]
-                progress_placeholder.progress(
-                    progress_value,
-                    text=f"进度: {progress['completed']}/{progress['total']}"
-                )
-            
-            # 显示指标
-            col1, col2, col3, col4 = metrics_placeholder.columns(4)
-            col1.metric("状态", status.upper())
-            col2.metric("总数", progress["total"])
-            col3.metric("已完成", progress["completed"])
-            col4.metric("失败", progress["failed"])
-            
-            # 显示当前执行的用例
-            if progress["current_case_id"]:
-                status_container.info(f"🔄 正在执行 Case {progress['current_case_id']}")
-            
-            # 任务完成
-            if status == "completed":
-                st.session_state.task_submitted = False
-                
-                results = task_status["results"]
-                correct_count = sum(1 for r in results if r.get("is_correct", False))
-                total_count = len(results)
-                accuracy = (correct_count / total_count * 100) if total_count > 0 else 0
-                
-                st.success(f"""
-✅ 测试完成！
+            result = response.json()
+            st.success(f"""
+✅ 任务已提交到后台执行！
 
-- 测试总数: **{total_count}**
-- 通过数: **{correct_count}**
-- 审图准确率: **{accuracy:.1f}%**
-- 任务ID: **{st.session_state.current_task_id}**
+- 任务ID: **{result['task_id']}**
+- 测试用例数: **{result['total_cases']}**
 
-请前往【结果面板】查看详细结果。
-                """)
-                
-                # 清空选择
-                st.session_state.selected_case_ids.clear()
-                st.session_state.current_task_id = None
+任务将在后台执行，请前往【任务队列】查看进度。
+            """)
             
-            # 任务失败
-            elif status == "failed":
-                st.session_state.task_submitted = False
-                st.error(f"❌ 任务执行失败: {task_status.get('error', '未知错误')}")
-                st.session_state.current_task_id = None
-            
-            # 任务取消
-            elif status == "cancelled":
-                st.session_state.task_submitted = False
-                st.warning("⚠️ 任务已被取消")
-                st.session_state.current_task_id = None
-            
-            # 任务进行中，自动刷新
-            elif status in ["pending", "running"]:
-                time.sleep(2)
-                st.rerun()
-        
         else:
-            st.error(f"❌ 获取任务状态失败: {response.text}")
-            st.session_state.task_submitted = False
-    
+            st.error(f"❌ 提交失败: {response.text}")
     except Exception as e:
-        st.error(f"❌ 获取任务状态失败: {e}")
-        st.session_state.task_submitted = False
+        st.error(f"❌ 提交失败: {e}")
+

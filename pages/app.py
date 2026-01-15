@@ -22,7 +22,8 @@ page_1 = "manage\\prompt.py"
 page_2 = "manage\\ref_gallery.py"
 page_3 = "manage\\test_cases.py"
 page_4 = "test\\run_test.py"
-page_5 = "test\\result.py"
+page_5 = "test\\task_queue.py"
+page_6 = "test\\result.py"
 
 pages = {
     "Manage": [
@@ -33,7 +34,8 @@ pages = {
     ],
     "Test": [
         st.Page(page_4, title="执行测试"),
-        st.Page(page_5, title="结果面板"),
+        st.Page(page_5, title="任务队列"),
+        st.Page(page_6, title="结果面板"),
     ],
 }
 
